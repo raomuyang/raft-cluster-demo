@@ -1,0 +1,12 @@
+{
+  "namespace": "cn.atomicer.zephyr.raft.model",
+  "type": "record",
+  "name": "Message",
+  "fields": [
+        {"name": "requestId", "type": "string"},
+        {"name": "mid", "type": "string" },
+        {"name": "term", "type": ["int", "null"]},
+        {"name": "type", "type": "string"},
+        {"name": "data", "type": ["bytes", "null"]}
+  ]
+}
