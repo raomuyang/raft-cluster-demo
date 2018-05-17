@@ -1,6 +1,5 @@
 package cn.atomicer.zephyr.raft.serialize;
 
-import cn.atomicer.zephyr.io.coding.Encoder;
 import cn.atomicer.zephyr.raft.exception.MessageDecodeException;
 import cn.atomicer.zephyr.raft.model.Message;
 

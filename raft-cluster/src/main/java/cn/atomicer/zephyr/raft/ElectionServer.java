@@ -1,9 +1,10 @@
 package cn.atomicer.zephyr.raft;
 
-import cn.atomicer.zephyr.io.socket2.*;
 import cn.atomicer.zephyr.raft.model.*;
 import cn.atomicer.zephyr.raft.serialize.MessageDecoder;
 import cn.atomicer.zephyr.raft.serialize.MessageEncoder;
+import cn.atomicer.zephyr.raft.socket.MessageDecodeHandler;
+import cn.atomicer.zephyr.raft.socket.MessageEncoderHandler;
 import com.google.gson.Gson;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -14,7 +15,6 @@ import io.netty.handler.timeout.ReadTimeoutHandler;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -52,8 +52,8 @@ public class ElectionServer {
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ch.pipeline().addLast(new ReadTimeoutHandler(Constants.READ_TIMEOUT, TimeUnit.SECONDS));
-                        ch.pipeline().addLast(new Buf2MessageDecoder<>(new MessageDecoder()));
-                        ch.pipeline().addLast(new Message2BufEncoder<>(new MessageEncoder()));
+                        ch.pipeline().addLast(new MessageDecodeHandler<>(new MessageDecoder()));
+                        ch.pipeline().addLast(new MessageEncoderHandler<>(new MessageEncoder()));
                         ch.pipeline().addLast(new MessageHandler());
                     }
                 });
@@ -82,15 +82,17 @@ public class ElectionServer {
             log.debug("EL-SERVER: got election message, type: " + type);
             switch (type) {
                 case MessageTypes.PING:
-                    electionManager.processAddEntitiesRequest(message);
+                    Message resp = electionManager.processAddEntitiesRequest(message);
+                    ctx.writeAndFlush(resp);
+                    log.debug(String.format("EL-SERVER: write message response (ping) success: %s", resp));
                     break;
                 case MessageTypes.VOTE:
                     Vote voteInfo = gson.fromJson(new String(message.getData().array()), Vote.class);
                     Vote myVote = electionManager.processVoteRequest(message.getMid().toString(), voteInfo);
                     log.debug("EL-SERVER: channel response: " + myVote);
                     Message voteResp = electionManager.buildMessage(MessageTypes.VOTE, myVote, requestId);
-                    ctx.writeAndFlush(voteResp).sync();
-                    log.debug(String.format("EL-SERVER: write message response success: %s", voteResp));
+                    ctx.writeAndFlush(voteResp);
+                    log.debug(String.format("EL-SERVER: write message response (vote) success: %s", voteResp));
             }
 
         }
@@ -99,15 +101,6 @@ public class ElectionServer {
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             log.warn("EL-SERVER: Unknown message process exception", cause);
         }
-    }
-
-
-
-    public static void main(String[] args) throws IOException, InterruptedException {
-        Configuration configuration = new Configuration();
-        configuration.loadConfig(ElectionServer.class.getResource("/config-3.yml").getPath());
-        ElectionServer server = new ElectionServer(configuration);
-        server.startServer();
     }
 
 }

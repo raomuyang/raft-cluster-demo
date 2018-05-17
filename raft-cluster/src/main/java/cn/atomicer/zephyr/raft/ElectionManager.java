@@ -38,7 +38,7 @@ public class ElectionManager extends Thread {
     private AtomicReference<VoteInfo> myVote;
     private int term;
     private int leaderTerm;
-    private Long leaderLogIndex;
+    private long committedIndex;
 
     private long electionStartTs;
     private long lastHeartbeatTs;
@@ -78,15 +78,6 @@ public class ElectionManager extends Thread {
     }
 
 
-    StatusEnum getStatus() {
-        return status.get();
-    }
-
-    ElectionManager setPrevLogIndex(Action<Long> prevLogIndex) {
-        this.prevLogIndex = prevLogIndex;
-        return this;
-    }
-
     /**
      * @param from 发送投票信息的机器mid
      * @param vote 投票信息
@@ -95,10 +86,10 @@ public class ElectionManager extends Thread {
         log.debug(String.format("ELECTION-MANAGER: peer: %s, vote content: %s", from, vote));
 
         String leaderName = knowableLeader.get();
-        if (leaderName != null) {
-            // 已存在，拒绝
+        if (vote.getLogIndex() < committedIndex) {
+            // 已冲突，拒绝
             log.debug(String.format("ELECTION-MANAGER: leader's lease in effect: %s", leaderName));
-            return new Vote(leaderName, leaderTerm, leaderLogIndex);
+            return new Vote(leaderName, leaderTerm, committedIndex);
         }
 
         switch (status.get()) {
@@ -148,45 +139,91 @@ public class ElectionManager extends Thread {
                 message.getTerm(), term, leaderTerm));
 
         long lastLogIndex = prevLogIndex.run();
+        Heartbeat heartbeat = gson.fromJson(new String(message.getData().array()), Heartbeat.class);
+
         String requestId = message.getRequestId().toString();
         if (message.getTerm() < term) {
             return buildMessage(MessageTypes.REJECT, lastLogIndex, requestId);
         }
 
-        long remoteLogIndex = message.getData() == null ? 0 : SerializeTool.bytes2long(message.getData().array());
         switch (status.get()) {
             case CANDIDATE:
             case LEADER:
-                if (message.getTerm() >= term && remoteLogIndex == lastLogIndex
-                        || remoteLogIndex > lastLogIndex) {
+                if (message.getTerm() > term && heartbeat.getCommitIndex() == committedIndex) {
+                    log.info(String.format("ELECTION-MANAGER: bigger leader term: %s, leader term: %s, logIndex: %s",
+                            localhost.getName(), term, lastLogIndex));
+                    // 轮数更大，日志步进相同
                     status.set(StatusEnum.FOLLOWER);
                     leaderTerm = message.getTerm();
                     knowableLeader.set(message.getMid().toString());
-                    leaderLogIndex = remoteLogIndex;
-                    return buildMessage(MessageTypes.ACK, lastLogIndex, requestId);
-                } else {
+                    // leader 转为 follower， prevLogIndex 重置到 committedIndex
+                    Heartbeat respHeartbeat = new Heartbeat(committedIndex, committedIndex, message.getTerm());
+                    return buildMessage(MessageTypes.ACK, respHeartbeat, requestId);
+
+                } else if (heartbeat.getCommitIndex() > committedIndex) {
                     log.info(String.format("ELECTION-MANAGER: conflict with self: %s, leader term: %s, logIndex: %s",
                             localhost.getName(), term, lastLogIndex));
+                    // 本地日志步进更小，设为Follower，重新同步
+                    status.set(StatusEnum.FOLLOWER);
+                    leaderTerm = message.getTerm();
+                    committedIndex = heartbeat.getCommitIndex();
+                    knowableLeader.set(message.getMid().toString());
                 }
                 break;
             case FOLLOWER:
                 updateHeartbeatTs();
                 leaderTerm = message.getTerm();
                 knowableLeader.set(message.getMid().toString());
-                if (remoteLogIndex == lastLogIndex) {
-                    leaderLogIndex = remoteLogIndex;
-                    return buildMessage(MessageTypes.ACK, lastLogIndex, requestId);
+                if (heartbeat.getPrevLogIndex() == lastLogIndex) {
+                    committedIndex = heartbeat.getCommitIndex();
+                    return buildMessage(
+                            MessageTypes.ACK,
+                            new Heartbeat(prevLogIndex.run(), committedIndex, leaderTerm),
+                            requestId
+                    );
                 }
         }
 
-        return buildMessage(MessageTypes.REJECT, lastLogIndex, requestId);
+        Heartbeat diff = new Heartbeat(prevLogIndex.run(), committedIndex, term);
+        return buildMessage(MessageTypes.REJECT, diff, requestId);
     }
 
-    private void sendHeartbeat() throws InterruptedException {
+    private void sendHeartbeat() {
         for (Machine machine : configuration.getConfig().getPeers()) {
             if (status.get() != StatusEnum.LEADER) return;
+
             try {
-                rpc.appendEntries(machine.getName());
+                long currentLogIndex = prevLogIndex.run();
+                long matchIndex;
+                Heartbeat heartbeat = new Heartbeat(currentLogIndex, committedIndex, term);
+                Message resp = rpc.appendEntries(machine.getName(), heartbeat);
+                Heartbeat respHeartbeat = gson.fromJson(new String(resp.getData().array()), Heartbeat.class);
+
+                switch (resp.getType().toString()) {
+                    case MessageTypes.REJECT:
+                        if (resp.getTerm() > term || respHeartbeat.getCommitIndex() > currentLogIndex) {
+                            log.warn(String.format("ELECTION-MANAGER: conflict, heartbeat: %s, response: %s",
+                                    heartbeat, respHeartbeat));
+                            leaderTerm = resp.getTerm();
+                            knowableLeader.set(null);
+                            status.set(StatusEnum.FOLLOWER);
+                            return;
+                        } else if (respHeartbeat.getPrevLogIndex() < currentLogIndex) {
+                            matchIndex = respHeartbeat.getPrevLogIndex();
+                            // send entities (matchIndex, prevLogIndex]
+                            Heartbeat newHeartbeat = new Heartbeat(matchIndex, committedIndex, term);
+                            Message secondResp = rpc.appendEntries(machine.getName(), newHeartbeat);
+                            if (!secondResp.getType().toString().equals(MessageTypes.ACK)) {
+                                log.warn(String.format("ELECTION-MANAGER: except `ACK`, actually: %s",
+                                        secondResp.getType()));
+                            }
+                        }
+                        break;
+                    case MessageTypes.ACK:
+                        log.info(String.format("ELECTION-MANAGER: Append entities successfully: %s, %s", machine.getName(), heartbeat));
+
+
+                }
                 log.debug(String.format("ELECTION-MANAGER: rpc invoke (%s) successfully: ping", machine.getName()));
             } catch (Throwable throwable) {
                 log.warn(String.format("ELECTION-MANAGER: rpc invoke error (%s)", machine.getHost()), throwable);
@@ -194,7 +231,9 @@ public class ElectionManager extends Thread {
         }
 
         try {
-            Thread.sleep(Constants.HEARTBEAT_RECYCLE);
+            long cycle = configuration.getConfig().getHeartbeatCycle();
+            cycle = cycle > 0 ? cycle : Constants.DEFAULT_HEARTBEAT_CYCLE;
+            Thread.sleep(cycle);
         } catch (InterruptedException e) {
             log.warn(e);
             interrupt();
@@ -213,9 +252,14 @@ public class ElectionManager extends Thread {
                 }
                 break;
             case FOLLOWER:
-                Thread.sleep(Constants.HEARTBEAT_TIMEOUT);
-                if (System.currentTimeMillis() - lastHeartbeatTs > Constants.HEARTBEAT_TIMEOUT
-                        && System.currentTimeMillis() - electionStartTs > Constants.ELECTION_TIMEOUT) {
+                long heartbeatTimeout = configuration.getConfig().getHeartbeatTimeout();
+                heartbeatTimeout = heartbeatTimeout > 0 ? heartbeatTimeout : Constants.DEFAULT_HEARTBEAT_TIMEOUT;
+                Thread.sleep(heartbeatTimeout);
+
+                long electionTimeout = configuration.getConfig().getElectionTimeout();
+                if (electionTimeout <= 0) electionTimeout = Constants.DEFAULT_ELECTION_TIMEOUT;
+                if (System.currentTimeMillis() - lastHeartbeatTs > heartbeatTimeout
+                        && System.currentTimeMillis() - electionStartTs > electionTimeout) {
                     newElection();
                 }
                 break;
@@ -362,8 +406,16 @@ public class ElectionManager extends Thread {
     Message buildMessage(String type, Object data, String requestId) {
         ByteBuffer buffer = null;
         if (data != null) {
-            String json = gson.toJson(data);
-            buffer = ByteBuffer.wrap(json.getBytes());
+            if (data instanceof Long) {
+                byte[] bytes = SerializeTool.long2Bytes((Long) data);
+                buffer = ByteBuffer.wrap(bytes);
+            } else if (data instanceof Integer) {
+                byte[] bytes = SerializeTool.int2bytes((Integer) data);
+                buffer = ByteBuffer.wrap(bytes);
+            } else {
+                String json = gson.toJson(data);
+                buffer = ByteBuffer.wrap(json.getBytes());
+            }
         }
         return Message.newBuilder()
                 .setMid(localhost.getName())
@@ -377,18 +429,13 @@ public class ElectionManager extends Thread {
     private class ElectionRPCImpl implements ElectionRPC {
 
         @Override
-        public void appendEntries(String machineName) throws Throwable {
+        public Message appendEntries(String machineName, Heartbeat heartbeat) throws Throwable {
             Machine machine = configuration.getMachines().get(machineName);
-            Message message = buildMessage(MessageTypes.PING, null);
+            Message message = buildMessage(MessageTypes.PING, heartbeat);
             log.debug(String.format("send message, requestId: %s, message type: %s",
                     message.getRequestId(), message.getType()));
             Future<Channel> future = messageSender.sendMessage(machine.getName(), message);
-            CountDownLatch countDownLatch = new CountDownLatch(1);
-            future.addListener(f -> {
-                if (f.isDone()) countDownLatch.countDown();
-            });
-            countDownLatch.await();
-            messageSender.release(message.getRequestId().toString());
+            return waitResponse(message, future);
         }
 
         @Override
@@ -424,7 +471,10 @@ public class ElectionManager extends Thread {
                 throw new SocketException("rpc invoke failed, cause: unknown");
             }
 
-            boolean res = messageSender.tryAcquire(message.getRequestId().toString(), Constants.SOCKET_TIMEOUT);
+            long socketTimeout = configuration.getConfig().getSocketTimeout() > 0
+                    ? configuration.getConfig().getSocketTimeout()
+                    : Constants.DEFAULT_SOCKET_TIMEOUT;
+            boolean res = messageSender.tryAcquire(message.getRequestId().toString(), socketTimeout);
             if (!res) {
                 throw new SocketException("read response timeout");
             }
@@ -456,5 +506,27 @@ public class ElectionManager extends Thread {
         }
     }
 
+
+    public StatusEnum getStatus() {
+        return status.get();
+    }
+
+
+    public ElectionManager setPrevLogIndexAction(Action<Long> prevLogIndex) {
+        this.prevLogIndex = prevLogIndex;
+        return this;
+    }
+
+    public int getTerm() {
+        return term;
+    }
+
+    public int getLeaderTerm() {
+        return leaderTerm;
+    }
+
+    public long getCommittedIndex() {
+        return committedIndex;
+    }
 
 }

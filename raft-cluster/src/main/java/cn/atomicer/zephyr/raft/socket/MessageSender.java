@@ -55,6 +55,7 @@ public class MessageSender {
 
     /**
      * 批量发送消息，无返回值
+     *
      * @param messageMap target machine: message
      */
     public void putMessage(Map<String, Message> messageMap) {
@@ -66,8 +67,9 @@ public class MessageSender {
 
     /**
      * 发送消息，并返回future
+     *
      * @param targetName 目标的机器id
-     * @param message 消息
+     * @param message    消息
      * @return 可绑定监听器的future
      */
     public Future<Channel> sendMessage(String targetName, Message message) {
@@ -75,7 +77,7 @@ public class MessageSender {
                 .addListener(new ClientChannelFutureListener(targetName, message));
     }
 
-    public boolean tryAcquire(String requestId, int millSeconds) throws InterruptedException {
+    public boolean tryAcquire(String requestId, long millSeconds) throws InterruptedException {
         Semaphore semaphore = this.requestSyncMap.get(requestId);
         if (semaphore == null) {
             log.debug("SENDER: No such request id found (acquire): " + requestId);
@@ -194,7 +196,8 @@ public class MessageSender {
             threadsCount = threadsCount > 0 ? threadsCount : 1;
             this.worker = new NioEventLoopGroup(threadsCount);
             this.bootstrap = new Bootstrap().group(worker).channel(NioSocketChannel.class);
-            this.poolMap = ZephyrConnPools.getPoolMap(bootstrap, onMessageRecv);
+            this.poolMap = ZephyrConnPools.getPoolMap(bootstrap, onMessageRecv,
+                    configuration.getConfig().getMaxConnections());
         }
 
         void shutdown() {

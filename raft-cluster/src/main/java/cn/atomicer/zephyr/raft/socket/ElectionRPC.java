@@ -1,5 +1,6 @@
 package cn.atomicer.zephyr.raft.socket;
 
+import cn.atomicer.zephyr.raft.model.Heartbeat;
 import cn.atomicer.zephyr.raft.model.Message;
 import cn.atomicer.zephyr.raft.model.Vote;
 
@@ -8,7 +9,7 @@ import cn.atomicer.zephyr.raft.model.Vote;
  *         on 2018/5/15.
  */
 public interface ElectionRPC {
-    void appendEntries(String machineName) throws Throwable;
+    Message appendEntries(String machineName, Heartbeat heartbeat) throws Throwable;
 
     Message requestVote(String machineName, Vote vote) throws Throwable;
 }

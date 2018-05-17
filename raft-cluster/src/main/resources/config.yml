@@ -11,7 +11,7 @@ peers:
     port: 1736:2736
 
 election.timeout: 3500
+election.connection.max: 30
 socket.timeout: 100
 heartbeat.timeout: 1000
 heartbeat.cycle: 1000
-election.connection.max: 30

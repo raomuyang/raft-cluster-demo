@@ -1,17 +1,16 @@
 machine:
   host: 127.0.0.1
-  port: 1734:2734
-  name: m-1
+  port: 1735:2735
+  name: m-2
 peers:
-  - name: m-2
+  - name: m-1
     host: 127.0.0.1
-    port: 1735:2735
+    port: 1734:2734
   - name: m-3
     host: 127.0.0.1
     port: 1736:2736
-
 election.timeout: 3500
+election.connection.max: 30
 socket.timeout: 100
 heartbeat.timeout: 1000
-heartbeat.cycle: 1000
-election.connection.max: 30
+heartbeat.cycle: 700

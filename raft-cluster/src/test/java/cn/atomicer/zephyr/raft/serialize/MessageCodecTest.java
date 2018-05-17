@@ -19,6 +19,7 @@ public class MessageCodecTest {
         Message message1 = Message.newBuilder().setData(null)
                 .setMid("a")
                 .setTerm(1)
+                .setRequestId("")
                 .setData(null)
                 .setType("xxx1")
                 .build();
@@ -28,6 +29,7 @@ public class MessageCodecTest {
         Message message2 = Message.newBuilder().setData(null)
                 .setMid("b")
                 .setTerm(2)
+                .setRequestId("")
                 .setData(null)
                 .setType("xxx2")
                 .build();

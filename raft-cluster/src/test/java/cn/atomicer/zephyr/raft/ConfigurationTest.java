@@ -19,6 +19,7 @@ public class ConfigurationTest {
         assertEquals("127.0.0.1", configuration.getConfig().getMachineInfo().getHost());
         assertEquals(1734, configuration.getConfig().getMachineInfo().getServerPort());
         assertEquals(2734, configuration.getConfig().getMachineInfo().getElectionPort());
+        assertEquals(30, configuration.getConfig().getMaxConnections());
     }
 
 }

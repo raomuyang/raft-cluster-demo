@@ -16,6 +16,17 @@ public class Config implements Serializable {
     private Machine machineInfo;
     private List<Machine> peers;
 
+    @JsonProperty("socket.timeout")
+    private long socketTimeout;
+    @JsonProperty("heartbeat.timeout")
+    private long heartbeatTimeout;
+    @JsonProperty("heartbeat.cycle")
+    private long heartbeatCycle;
+    @JsonProperty("election.timeout")
+    private long electionTimeout;
+    @JsonProperty("election.connection.max")
+    private int maxConnections;
+
     public Machine getMachineInfo() {
         return machineInfo;
     }
@@ -32,11 +43,56 @@ public class Config implements Serializable {
         this.peers = peers;
     }
 
+    public long getElectionTimeout() {
+        return electionTimeout;
+    }
+
+    public void setElectionTimeout(long electionTimeout) {
+        this.electionTimeout = electionTimeout;
+    }
+
+    public long getSocketTimeout() {
+        return socketTimeout;
+    }
+
+    public void setSocketTimeout(long socketTimeout) {
+        this.socketTimeout = socketTimeout;
+    }
+
+    public long getHeartbeatTimeout() {
+        return heartbeatTimeout;
+    }
+
+    public void setHeartbeatTimeout(long heartbeatTimeout) {
+        this.heartbeatTimeout = heartbeatTimeout;
+    }
+
+    public long getHeartbeatCycle() {
+        return heartbeatCycle;
+    }
+
+    public void setHeartbeatCycle(long heartbeatCycle) {
+        this.heartbeatCycle = heartbeatCycle;
+    }
+
+    public int getMaxConnections() {
+        return maxConnections;
+    }
+
+    public void setMaxConnections(int maxConnections) {
+        this.maxConnections = maxConnections;
+    }
+
     @Override
     public String toString() {
         return "Config{" +
                 "machineInfo=" + machineInfo +
                 ", peers=" + peers +
+                ", electionTimeout=" + electionTimeout +
+                ", socketTimeout=" + socketTimeout +
+                ", heartbeatTimeout=" + heartbeatTimeout +
+                ", heartbeatCycle=" + heartbeatCycle +
+                ", maxConnections=" + maxConnections +
                 '}';
     }
 }
