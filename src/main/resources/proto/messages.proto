@@ -1,0 +1,48 @@
+
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "cn.atomicer.raft.proto";
+
+package proto;
+
+enum MessageType {
+    DENY = 0;
+    OK = 1;
+    ERROR = 2;
+}
+
+message Vote {
+    string nodeId = 1;
+    int64 term = 2;
+    EntryInfo lastEntryInfo = 3;
+}
+
+message AppendEntriesRequest {
+    string leaderId = 1;
+    int64 term = 2;
+    int64 prevLogIndex = 3;
+    int64 prevLogTerm = 4;
+    int64 leaderCommit = 5;
+    repeated EntryInfo entries = 6;
+}
+
+message EntryInfo {
+    int64 logIndex = 1;
+    int64 createTerm = 2;
+    bytes data = 3;
+}
+
+message Request {
+    MessageType type = 1;
+    string nodeId = 2;
+    int64 term = 3;
+    EntryInfo lastEntriesInfo = 4;
+    bytes data = 5;
+}
+
+message Response {
+    MessageType type = 1;
+    int64 term = 2;
+    bytes data = 3;
+}

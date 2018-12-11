@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "cn.atomicer.raft.rpc";
+option java_outer_classname = "NodeRPC";
+
+package rpc;
+
+import "messages.proto";
+
+service NodeProxy {
+
+    // leader to follower, request append log or heartbeat
+    rpc AppendEntries (proto.AppendEntriesRequest) returns (proto.Response);
+    // candidate to peers, request vote
+    rpc RequestVote (proto.Vote) returns (proto.Response);
+
+}

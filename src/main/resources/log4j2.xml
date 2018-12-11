@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration status="error" name="atomicer-raft">
+    <Appenders>
+        <RollingFile name="RollingFile" fileName="atomicer-raft.log"
+                     filePattern="raft-%d{MM-dd-yyyy}.log.gz">
+            <BurstFilter level="INFO" rate="16" maxBurst="100"/>
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+            <TimeBasedTriggeringPolicy/>
+        </RollingFile>
+        <Console name="STDOUT" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} [%-5level] %m%n"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <Root level="DEBUG">
+            <AppenderRef ref="STDOUT"/>
+        </Root>
+    </Loggers>
+</Configuration>

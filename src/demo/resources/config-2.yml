@@ -1,0 +1,14 @@
+machine:
+  host: 127.0.0.1
+  port: 1735
+  name: m-2
+peers:
+  - name: m-1
+    host: 127.0.0.1
+    port: 1734
+  - name: m-3
+    host: 127.0.0.1
+    port: 1736
+
+socket.timeout: 1000
+election.timeout: 1000
